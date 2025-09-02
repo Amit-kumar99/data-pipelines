@@ -3,6 +3,8 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import pandas as pd
 import boto3
+import os
+import logging
 
 # Default DAG arguments
 default_args = {
@@ -12,14 +14,15 @@ default_args = {
 
 # Upload function
 def upload_sales_to_s3():
-    # Load your CSV file
-    df = pd.read_csv("/home/ssm-user/sales-dataset.csv")
+    # Load your CSV file (absolute path)
+    csv_path = "/home/ssm-user/sales-dataset.csv"
+    df = pd.read_csv(csv_path)
 
-    # Add partition columns (year/month/day from sale_date column)
-    df['sale_date'] = pd.to_datetime(df['sale_date'])
-    df['year'] = df['sale_date'].dt.year
-    df['month'] = df['sale_date'].dt.month
-    df['day'] = df['sale_date'].dt.day
+    # Convert 'Date' column to datetime and add partition columns
+    df['Date'] = pd.to_datetime(df['Date'], format="%d/%m/%Y")
+    df['year'] = df['Date'].dt.year
+    df['month'] = df['Date'].dt.month
+    df['day'] = df['Date'].dt.day
 
     # S3 client
     s3 = boto3.client("s3")
@@ -27,13 +30,14 @@ def upload_sales_to_s3():
 
     # Loop through partitions and upload each subset
     for (year, month, day), subset in df.groupby(["year", "month", "day"]):
-        key = f"sales_data/year={year}/month={month}/day={day}/sales.csv"
-        temp_file = f"/tmp/sales_{year}_{month}_{day}.csv"
+        key = f"sales_data/year={year}/month={month:02}/day={day:02}/sales.csv"
+        temp_file = f"/tmp/sales_{year}_{month:02}_{day:02}.csv"
 
         subset.to_csv(temp_file, index=False)
         s3.upload_file(temp_file, bucket, key)
 
-        print(f"Uploaded {key}")
+        logging.info(f"Uploaded {key} to S3")
+        os.remove(temp_file)
 
 # Define the DAG
 with DAG(
@@ -45,7 +49,7 @@ with DAG(
 ) as dag:
 
     upload_task = PythonOperator(
-        task_id='upload_sales_to_s3',
+        task_id='upload_sales_to_s3_task',
         python_callable=upload_sales_to_s3
     )
 
