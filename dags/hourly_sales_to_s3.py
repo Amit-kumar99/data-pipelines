@@ -6,7 +6,6 @@ import boto3
 
 # Default DAG arguments
 default_args = {
-    'owner': 'amit',
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
@@ -14,7 +13,7 @@ default_args = {
 # Upload function
 def upload_sales_to_s3():
     # Load your CSV file
-    df = pd.read_csv("/home/ubuntu/data/sales.csv")
+    df = pd.read_csv("/home/ssm-user/sales-dataset.csv")
 
     # Add partition columns (year/month/day from sale_date column)
     df['sale_date'] = pd.to_datetime(df['sale_date'])
@@ -24,7 +23,7 @@ def upload_sales_to_s3():
 
     # S3 client
     s3 = boto3.client("s3")
-    bucket = "my-sales-data-bucket"
+    bucket = "kaggle-retail-analytics-dataset"
 
     # Loop through partitions and upload each subset
     for (year, month, day), subset in df.groupby(["year", "month", "day"]):
@@ -34,7 +33,7 @@ def upload_sales_to_s3():
         subset.to_csv(temp_file, index=False)
         s3.upload_file(temp_file, bucket, key)
 
-        print(f"✅ Uploaded {key}")
+        print(f"Uploaded {key}")
 
 # Define the DAG
 with DAG(
