@@ -44,7 +44,7 @@ with DAG(
     dag_id='sales_to_s3_dag',
     default_args=default_args,
     start_date=datetime(2025, 9, 2),
-    schedule_interval=None,  # Run only when triggered
+    schedule_interval='@once',  # Run only when triggered
     catchup=False
 ) as dag:
 
