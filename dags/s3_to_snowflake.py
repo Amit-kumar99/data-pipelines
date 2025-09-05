@@ -26,7 +26,7 @@ def build_sql_statements(ti):
     return sqls
 
 with DAG(
-    "s3_to_snowflake_staging_operator",
+    "s3_to_snowflake_staging_dag",
     default_args=default_args,
     start_date=datetime(2025, 9, 2),
     schedule_interval="@hourly",
