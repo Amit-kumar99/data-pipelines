@@ -30,9 +30,31 @@ def upload_sales_to_s3():
 
     # Loop through partitions and upload each subset
     for (year, month, day), subset in df.groupby(["year", "month", "day"]):
-        key = f"sales_data/year={year}/month={month:02}/day={day:02}/sales.csv"
-        temp_file = f"/tmp/sales_{year}_{month:02}_{day:02}.csv"
+        prefix = f"sales_data/year={year}/month={month:02}/day={day:02}/"
 
+        # List existing files in this partition
+        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        existing_files = []
+        if "Contents" in response:
+            existing_files = [obj["Key"] for obj in response["Contents"]]
+
+        # Find the next sequence number
+        max_seq = 0
+        for f in existing_files:
+            # Expecting files like part-0001.csv
+            fname = os.path.basename(f)
+            if fname.startswith("part-") and fname.endswith(".csv"):
+                try:
+                    num = int(fname.split("-")[1].split(".")[0])
+                    max_seq = max(max_seq, num)
+                except ValueError:
+                    pass
+
+        next_seq = max_seq + 1
+        key = f"{prefix}part-{next_seq:04}.csv"   # -> part-0001.csv, part-0002.csv
+
+        # Write temp file and upload
+        temp_file = f"/tmp/sales_{year}_{month:02}_{day:02}_{next_seq}.csv"
         subset.to_csv(temp_file, index=False)
         s3.upload_file(temp_file, bucket, key)
 
