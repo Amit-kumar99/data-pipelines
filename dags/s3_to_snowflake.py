@@ -23,7 +23,7 @@ def build_sql_statements(ti):
         sqls.append(f"""
             INSERT INTO {INGESTION_LOG} VALUES ('{f}', CURRENT_TIMESTAMP);
         """)
-    return sqls
+    return "\n".join(sqls)  # Returns a single SQL script
 
 with DAG(
     "s3_to_snowflake_staging_dag",
