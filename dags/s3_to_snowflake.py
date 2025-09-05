@@ -64,7 +64,7 @@ with DAG(
     load_to_snowflake = SnowflakeOperator(
         task_id="load_to_snowflake",
         snowflake_conn_id="my_snowflake_conn",
-        sql="{{ ti.xcom_pull(task_ids='build_sqls') }}",
+        sql="{{ ti.xcom_pull(task_ids='build_sqls') | tojson }}",
     )
 
     list_s3_files >> filter_files >> build_sqls >> load_to_snowflake
