@@ -28,8 +28,9 @@ def list_all_s3_files(ti):
 def filter_new_files(ti):
     hook = SnowflakeHook(snowflake_conn_id="my_snowflake_conn")
     df = hook.get_pandas_df(f"SELECT filename FROM {INGESTION_LOG}")
-    already_loaded = set(df["FILENAME"].tolist())
+    already_loaded = set(df["FILENAME"].tolist()) if not df.empty else set()
     files = ti.xcom_pull(task_ids="list_s3_files") or []
+    # compare s3 files with log table
     new_files = [f for f in files if f not in already_loaded]
     print("New files to load:", new_files)
     return new_files
