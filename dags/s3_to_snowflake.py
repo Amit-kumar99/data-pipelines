@@ -1,8 +1,9 @@
 from airflow import DAG
-from airflow.providers.amazon.aws.operators.s3 import S3ListOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from datetime import datetime, timedelta
+import boto3
 
 default_args = {"retries": 1, "retry_delay": timedelta(minutes=5)}
 
@@ -11,8 +12,31 @@ S3_PREFIX = "sales_data/"
 INGESTION_LOG = "file_ingestion_log"
 STAGING_TABLE = "sales_staging"
 
+# List all S3 files recursively
+def list_all_s3_files(ti):
+    s3 = boto3.client("s3")
+    files = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=S3_PREFIX):
+        for obj in page.get("Contents", []):
+            if not obj["Key"].endswith("/"):  # skip folders
+                files.append(obj["Key"])
+    print("Files found in S3:", files)
+    return files
+
+# Filter files not already loaded in Snowflake
+def filter_new_files(ti):
+    hook = SnowflakeHook(snowflake_conn_id="my_snowflake_conn")
+    df = hook.get_pandas_df(f"SELECT filename FROM {INGESTION_LOG}")
+    already_loaded = set(df["FILENAME"].tolist())
+    files = ti.xcom_pull(task_ids="list_s3_files") or []
+    new_files = [f for f in files if f not in already_loaded]
+    print("New files to load:", new_files)
+    return new_files
+
+# Build SQL statements for Snowflake
 def build_sql_statements(ti):
-    files = ti.xcom_pull(task_ids="filter_new_files")
+    files = ti.xcom_pull(task_ids="filter_new_files") or []
     sqls = []
     for f in files:
         sqls.append(f"""
@@ -23,8 +47,9 @@ def build_sql_statements(ti):
         sqls.append(f"""
             INSERT INTO {INGESTION_LOG} VALUES ('{f}', CURRENT_TIMESTAMP);
         """)
-    return "\n".join(sqls)  # Returns a single SQL script
+    return "; ".join(sqls)
 
+# DAG definition
 with DAG(
     "s3_to_snowflake_staging_dag",
     default_args=default_args,
@@ -33,29 +58,16 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # 1. List S3 files
-    list_s3_files = S3ListOperator(
+    list_s3_files = PythonOperator(
         task_id="list_s3_files",
-        bucket=S3_BUCKET,
-        prefix=S3_PREFIX,
-        aws_conn_id="aws_default",
+        python_callable=list_all_s3_files,
     )
-
-    # 2. Filter files not already loaded
-    def filter_new_files(ti):
-        from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-        hook = SnowflakeHook(snowflake_conn_id="my_snowflake_conn")
-        df = hook.get_pandas_df(f"SELECT filename FROM {INGESTION_LOG}")
-        already_loaded = set(df["FILENAME"].tolist())
-        files = ti.xcom_pull(task_ids="list_s3_files")
-        return [f for f in files if f not in already_loaded]
 
     filter_files = PythonOperator(
         task_id="filter_new_files",
         python_callable=filter_new_files,
     )
 
-    # 3. Build SQL for each file and run via SnowflakeOperator
     build_sqls = PythonOperator(
         task_id="build_sqls",
         python_callable=build_sql_statements,
